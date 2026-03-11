@@ -1,3 +1,2 @@
 # group-wall-archiver
-how do i make a repository
-is this game real
+ i have made the repository wonderful news everyone
