@@ -8,6 +8,7 @@ import utils
 
 GROUP_ID = 1
 API_VERSION = 2 # 1|2
+WAIT_TIME_BETWEEN_CALLS = 5 # Seconds
 MESSAGES_PER_CALL = 100 # 10|25|50|100
 
 # ── Variables ─────────────────────────────────────────────────────────────── #
@@ -106,10 +107,9 @@ def get_group_messages(group_id: int):
 				message = parse_message(message, group_id)
 				ARCHIVE.add_message(message)
 			
-			new_messages = len(data["data"])
-			total_messages += new_messages
-			print(f"Wrote {new_messages}/{total_messages} entries.")
-			sleep( new_messages / 4 )
+			total_messages += len(data["data"])
+			print(f"{total_messages} entries.")
+			sleep( WAIT_TIME_BETWEEN_CALLS )
 
 			cursor = data.get("nextPageCursor", None)
 			if not cursor: break
