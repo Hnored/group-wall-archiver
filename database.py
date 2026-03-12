@@ -6,12 +6,20 @@ import sqlite3
 class Message:
 	id: int
 	group_id: int
-	user_id: int
-	display_name: str
-	role_rank: int
-	role_name: str
-	message: str
-	created: int
+
+	user_id: int|None
+	username: str|None
+	display_name: str|None
+	has_verified_badge: bool|None
+
+	role_id: int|None
+	role_rank: int|None
+	role_name: str|None
+
+	body: str
+	created: str
+	updated: str
+# This is not optimized, for now we are just dumping everything raw
 
 class Database:
 	def __init__(self, path: str = "archive.db"):
@@ -27,13 +35,20 @@ class Database:
 		self.connection.execute("""
 		CREATE TABLE IF NOT EXISTS messages (
 			message_id INTEGER PRIMARY KEY,
-			group_id INTEGER,
+			group_id INTEGER NOT NULL,
+			
 			user_id INTEGER,
+			username TEXT,
 			display_name TEXT,
+			has_verified_badge BOOLEAN,	  
+
+			role_id INTEGER,
 			role_rank INTEGER,
 			role_name TEXT,
-			message TEXT,
-			created INTEGER
+				  
+			body TEXT NOT NULL,
+			created TEXT NOT NULL,
+			updated TEXT NOT NULL
 		)
 		""")
 
@@ -43,20 +58,26 @@ class Database:
 		self.connection.commit()
 
 	def add_message(self, message: Message):
-		print(message.id)
 		self.connection.execute("""
-			INSERT INTO messages
-			(message_id, group_id, user_id, display_name, role_rank, role_name, message, created)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT OR IGNORE INTO messages
+			(message_id, group_id, user_id, username, display_name, has_verified_badge, role_id, role_rank, role_name, body, created, updated)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""", (
 				message.id,
 				message.group_id,
+
 				message.user_id,
+				message.username,
 				message.display_name,
+				message.has_verified_badge,
+
+				message.role_id,
 				message.role_rank,
 				message.role_name,
-				message.message,
-				message.created
+				
+				message.body,
+				message.created,
+				message.updated
 			),
 		)
 		self.connection.commit()

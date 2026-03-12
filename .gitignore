@@ -1,1 +1,6 @@
 **/__pycache__/
+cookies.txt
+proxies.txt
+archive.db
+archive.db-shm
+archive.db-wal
