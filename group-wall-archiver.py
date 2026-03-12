@@ -1,21 +1,23 @@
+from requests.exceptions import RequestException
 from database import Database, Message
-from typing import TypedDict
-from requests import get
+from json import load as load_json
+from typing import TypedDict, cast
+from requests import Session
+from pathlib import Path
 from time import sleep
 import utils
 
 # ── Config ────────────────────────────────────────────────────────────────── #
 
-GROUP_ID = 1
-API_VERSION = 2 # 1|2
-WAIT_TIME_BETWEEN_CALLS = 5 # Seconds
-MESSAGES_PER_CALL = 100 # 10|25|50|100
+GROUP_ID = 35815907
+MAX_RETRIES = 6
+SECONDS_BETWEEN_CALLS = 3
 
 # ── Variables ─────────────────────────────────────────────────────────────── #
 
+SESSION = Session()
 ARCHIVE = Database()
 CREDENTIAL_MANAGER = utils.CredentialManager()
-WALL_API = f"https://groups.roblox.com/v{API_VERSION}/groups/{GROUP_ID}/wall/posts?limit={MESSAGES_PER_CALL}&sortOrder=Asc"
 
 # ── Parsing ───────────────────────────────────────────────────────────────── #
 
@@ -86,38 +88,66 @@ def parse_message(data: RawMessage, group_id: int) -> Message:
 
 # ── Main Method ───────────────────────────────────────────────────────────── #
 
-def get_group_messages(group_id: int):
+def import_json_archive(path: str) -> None:
+	print(f'Importing from "{path}"')
+	file = Path(path)
+
+	with file.open("r", encoding="utf-8") as f:
+		data = load_json(f)
+
+	group_id = data["groupId"]
+	messages = [
+		parse_message(post, group_id) 
+		for post in data["posts"]
+	]
+
+	ARCHIVE.add_messages(messages)
+
+def get_json_with_cookie(url: str) -> None:
+	for attempt in range(1, MAX_RETRIES + 1):
+		try:
+			response = SESSION.get( url, 
+				cookies = {".ROBLOSECURITY": CREDENTIAL_MANAGER.rotate_cookie()},
+                timeout = 30 )
+			if response.status_code == 429:
+				print( utils.y("⚠ Rate limited, sleeping 10s") )
+				sleep(10)
+				continue
+			response.raise_for_status()
+			return response.json()
+		except RequestException as err:
+			print(f"[retry {attempt}/{MAX_RETRIES}] {err}")
+			if attempt == MAX_RETRIES: raise
+			sleep(2 ** attempt)
+
+def get_group_messages(group_id: int) -> None:
 	total_messages = 0
-	cursor = ""
+	cursor: str|None = ""
+
+	print(f"Starting archive for group: {group_id}")
 	
 	while True:
+		url = f"https://groups.roblox.com/v2/groups/{group_id}/wall/posts?limit=100&sortOrder=Asc&cursor={cursor}"
+
 		try:
-			url = f"https://groups.roblox.com/v{API_VERSION}/groups/{group_id}/wall/posts?limit={MESSAGES_PER_CALL}&sortOrder=Asc&cursor={cursor}"
-
-			response = get(url, cookies = {".ROBLOSECURITY": CREDENTIAL_MANAGER.rotate_cookie()})
-			if not response.ok:
-				print(f"[get_group_messages] Failed ({response.status_code}) for group {group_id}")
-				print(response.json())
-				break
-
-			data = response.json()
-			if not data or "data" not in data: break
-
-			for message in data.get("data", []):
-				message = parse_message(message, group_id)
-				ARCHIVE.add_message(message)
-			
-			total_messages += len(data["data"])
-			print(f"{total_messages} entries.")
-			sleep( WAIT_TIME_BETWEEN_CALLS )
-
-			cursor = data.get("nextPageCursor", None)
-			if not cursor: break
+			data = cast(WallResponse, get_json_with_cookie(url))
 		except Exception as err:
 			print(f"[get_group_messages] Unexpected Error: {err}")
+			print("\t", url)
 			break
 
-def main():
+		ARCHIVE.add_messages([ parse_message(message, group_id) for message in data.get("data", []) ])
+		
+		total_messages += len(data["data"])
+		print(f"{total_messages} entries.")
+		sleep(SECONDS_BETWEEN_CALLS)
+
+		cursor = data.get("nextPageCursor", None)
+		if not cursor:
+			print( utils.g("Archive Complete") )
+			break
+
+def main() -> None:
 	print("🟢", utils.g("Connection Established"))
 
 	try:
@@ -129,7 +159,9 @@ def main():
 
 if __name__ == "__main__":
 	print("🔨 Initializing")
-	try: main()
+	try: 
+		main()
+		# import_json_archive("archives\\group_1_wall_archive.json")
 	except KeyboardInterrupt:
 		print("⭕", utils.r("Disconnected"))
 ARCHIVE.close()

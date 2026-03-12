@@ -26,7 +26,11 @@ class Database:
 		self.path = Path(path)
 		self.connection = sqlite3.connect(self.path)
 		self.connection.row_factory = sqlite3.Row
+
 		self.connection.execute("PRAGMA journal_mode=WAL;")
+		self.connection.execute("PRAGMA synchronous = NORMAL;")
+		self.connection.execute("PRAGMA temp_store = MEMORY;")
+
 		self._create_schema()
 	
 	def _create_schema(self):
@@ -58,29 +62,37 @@ class Database:
 		self.connection.commit()
 
 	def add_message(self, message: Message):
-		self.connection.execute("""
-			INSERT OR IGNORE INTO messages
-			(message_id, group_id, user_id, username, display_name, has_verified_badge, role_id, role_rank, role_name, body, created, updated)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			""", (
-				message.id,
-				message.group_id,
+		self.add_messages([message])
 
-				message.user_id,
-				message.username,
-				message.display_name,
-				message.has_verified_badge,
+	def add_messages(self, messages: list[Message]):
+		chunk_size = 1000
+		query = """
+		INSERT OR IGNORE INTO messages
+		(message_id, group_id, user_id, username, display_name, has_verified_badge, role_id, role_rank, role_name, body, created, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		"""
 
-				message.role_id,
-				message.role_rank,
-				message.role_name,
-				
-				message.body,
-				message.created,
-				message.updated
-			),
-		)
-		self.connection.commit()
+		with self.connection:
+			for i in range(0, len(messages), chunk_size):
+				chunk = messages[i:i + chunk_size]
+				self.connection.executemany(query, [(
+						message.id,
+						message.group_id,
+
+						message.user_id,
+						message.username,
+						message.display_name,
+						message.has_verified_badge,
+
+						message.role_id,
+						message.role_rank,
+						message.role_name,
+
+						message.body,
+						message.created,
+						message.updated
+					) for message in chunk ]
+				)
 
 	def close(self):
 		self.connection.close()
