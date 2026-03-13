@@ -10,7 +10,10 @@ import utils
 # ── Config ────────────────────────────────────────────────────────────────── #
 
 GROUP_ID = 35815907
+STOP_AT_MESSAGE_ID = 6374685646
+
 MAX_RETRIES = 6
+NEWEST_FIRST = True
 SECONDS_BETWEEN_CALLS = 3
 
 # ── Variables ─────────────────────────────────────────────────────────────── #
@@ -18,6 +21,8 @@ SECONDS_BETWEEN_CALLS = 3
 SESSION = Session()
 ARCHIVE = Database()
 CREDENTIAL_MANAGER = utils.CredentialManager()
+SORT_ORDER = "Desc" if NEWEST_FIRST else "Asc"
+print(SORT_ORDER)
 
 # ── Parsing ───────────────────────────────────────────────────────────────── #
 
@@ -123,11 +128,12 @@ def get_json_with_cookie(url: str) -> None:
 def get_group_messages(group_id: int) -> None:
 	total_messages = 0
 	cursor: str|None = ""
+	found_message_id = False
 
 	print(f"Starting archive for group: {group_id}")
 	
-	while True:
-		url = f"https://groups.roblox.com/v2/groups/{group_id}/wall/posts?limit=100&sortOrder=Asc&cursor={cursor}"
+	while not found_message_id:
+		url = f"https://groups.roblox.com/v2/groups/{group_id}/wall/posts?limit=100&sortOrder={SORT_ORDER}&cursor={cursor}"
 
 		try:
 			data = cast(WallResponse, get_json_with_cookie(url))
@@ -135,11 +141,19 @@ def get_group_messages(group_id: int) -> None:
 			print(f"[get_group_messages] Unexpected Error: {err}")
 			print("\t", url)
 			break
-
-		ARCHIVE.add_messages([ parse_message(message, group_id) for message in data.get("data", []) ])
 		
+		messages: list[Message] = []
+		for raw_message in data.get("data", []):
+			message = parse_message(raw_message, group_id)
+			messages.append(message)
+			if message.id == STOP_AT_MESSAGE_ID:
+				found_message_id = True
+				print( utils.g("FOUND TARGET MESSAGE ID") )
+		ARCHIVE.add_messages(messages)
+
 		total_messages += len(data["data"])
-		print(f"{total_messages} entries.")
+		first_message_date = messages[1].created[:10] if messages[1] else "XXXX-XX-XX"
+		print(f"{first_message_date}\t{total_messages}")
 		sleep(SECONDS_BETWEEN_CALLS)
 
 		cursor = data.get("nextPageCursor", None)
@@ -159,7 +173,7 @@ def main() -> None:
 
 if __name__ == "__main__":
 	print("🔨 Initializing")
-	try: 
+	try:
 		main()
 		# import_json_archive("archives\\group_1_wall_archive.json")
 	except KeyboardInterrupt:
